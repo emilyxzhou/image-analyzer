@@ -37,6 +37,7 @@ class ImageCapture:
             print("Could not open video device")
 
     def start_recording(self):
+        """Call this method before running 'get_image()'."""
         if self._is_recording:
             raise RuntimeError("Video is already being recorded")
 
@@ -60,6 +61,7 @@ class ImageCapture:
                 raise RuntimeError("Recording has not been started")
 
     def stop_recording(self):
+        """Call this method before terminating the script to properly release the VideoCapture object."""
         if not self._is_recording:
             raise RuntimeError("Video recording was not started")
 
