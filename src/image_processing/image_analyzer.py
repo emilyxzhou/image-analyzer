@@ -17,7 +17,7 @@ class ImageAnalyzer:
         self._image = None
         self._save_path = save_path
         self._ext = ext
-        # Used for calculating the edge map
+        # Used for calculating the edge map with cv2's Canny algorithm
         self._lower_threshold = lower_threshold
         self._upper_threshold = upper_threshold
 
@@ -27,7 +27,8 @@ class ImageAnalyzer:
         max_box_height = self._frame_height*2 // 3
         min_box_width = self._frame_width // 3
         min_box_height = self._frame_height // 4
-
+        # Describes concentric rectangles that define the region for OLED screen detection. 
+        # The first element defines the top left corner of the rectangle, the second describes the bottom right corner.
         self._max_bounds = [
             (self._frame_width // 2 - max_box_width // 2, self._frame_height // 2 - max_box_height // 2),  # top left
             (self._frame_width // 2 + max_box_width // 2, self._frame_height // 2 + max_box_height // 2),  # bottom right
@@ -37,9 +38,14 @@ class ImageAnalyzer:
             (self._frame_width // 2 - min_box_width // 2, self._frame_height // 2 - min_box_height // 2),  # top left
             (self._frame_width // 2 + min_box_width // 2, self._frame_height // 2 + min_box_height // 2),  # bottom right
         ]
-        self._min_area = min_box_width * min_box_height
 
     def run(self, show_edgemap=False, screenshot_on_pause=False):
+        """
+        Analyzes video stream frame-by-frame. Press the spacebar to pause the stream manually.
+        Otherwise, stream will pause when a valid bounding box is detected. The frame will be cropped to that bounding box
+        and passed to an OCR model. If text is detected, the cropped image will be saved locally. 
+        If the stream is paused, press any key to resume.
+        """
         self._image_capture.start_recording()
         while True:
             image = self._image_capture.get_image()
@@ -69,7 +75,11 @@ class ImageAnalyzer:
         cv2.destroyAllWindows()
 
     def crop_image(self, image, save_path=None):
-        """'image' param must be an image, not a file path. Returns the cropped image."""
+        """
+        Returns the image cropped to the largest valid rectangular contour. 
+        A rectangular contour is considered valid if it is within the rectangular bounds delineated by green lines in the video stream.
+        'image' param must be an image, not a file path.
+        """
         if type(image) == str:
             image = cv2.imread(image)
         bounding_rect = self.get_largest_valid_bounding_rect(image)
@@ -88,7 +98,10 @@ class ImageAnalyzer:
         return cropped
 
     def detect_rectangles(self, image):
-        """Returns all rectangles found in image."""
+        """
+        Returns all rectanglular contours found in the image.
+        'image' param must be an image, not a file path.
+        """
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         edges = cv2.Canny(gray, self._lower_threshold, self._upper_threshold)
         contours, _ = cv2.findContours(edges.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -100,7 +113,7 @@ class ImageAnalyzer:
         return rectangles
 
     def display_image(self, image):
-        """Input can be an image or the path to an image. Displays the image until any key is pressed"""
+        """'image' can be an image or the path to an image Displays the image until any key is pressed."""
         if type(image) == str:
             image = cv2.imread(image)
         cv2.imshow("frame", image)
@@ -108,7 +121,7 @@ class ImageAnalyzer:
         cv2.destroyAllWindows()
 
     def display_multiple_images(self, image_list):
-        """image_list is a list of numpy arrays"""
+        """'image_list' must be a list of numpy arrays. Displays the image until any key is pressed."""
         max_width = max([img.shape[1] for img in image_list])
         max_height = max([img.shape[0] for img in image_list])
         for i in range(len(image_list)):
@@ -126,6 +139,10 @@ class ImageAnalyzer:
         cv2.destroyAllWindows()
 
     def draw_rectangle(self, image, bounding_rect, show_edgemap=False):
+        """
+        Draws a rectangle on the image according to the given bounding box.
+        Returns the edgemap of the image if 'show_edgemap' is True.
+        """
         gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
         edges = cv2.Canny(gray, self._lower_threshold, self._upper_threshold)
         image_to_show = image
@@ -140,6 +157,7 @@ class ImageAnalyzer:
         return image_to_show
 
     def _draw_bounds(self, image, show_edgemap=False):
+        """Draws the bounds for identifying a rectangular OLED screen defined by class variables self._min_bounds and self._max_bounds."""
         gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
         edges = cv2.Canny(gray, self._lower_threshold, self._upper_threshold)
         image_to_show = image
@@ -160,13 +178,17 @@ class ImageAnalyzer:
         return image_to_show
 
     def extract_text(self, image):
-        """Input can be an image or the path to an image"""
+        """'image' can be an image or the path to an image."""
         if type(image) == str:
             image = cv2.imread(image)
         text = pytesseract.image_to_string(image)
         return text
 
     def get_largest_valid_bounding_rect(self, image):
+        """
+        Returns the largest rectangular contour within the bounds defined by self._min_bounds and self._max_bounds.
+        Returns 'None' if no such valid rectangular contour is found.
+        """
         rectangles = self.detect_rectangles(image)
         max_contour_area = 0
         max_index = -1
@@ -180,6 +202,7 @@ class ImageAnalyzer:
         return bounding_rect
 
     def save_image(self, image, save_path=None):
+        """Save image to save path. If no value is passed for 'save_path', image will be saved to {self._save_path}.{self._ext}."""
         if save_path is None:
             save_path = self._save_path
         print(f"Saving image to {save_path}.{self._ext}")
@@ -189,12 +212,14 @@ class ImageAnalyzer:
         cv2.imwrite(f"{save_path}.{self._ext}", image_with_rectangle)
 
     def _is_oled_on_screen(self, image):
+        """Returns True if a rectangular contour is found within self._min_bounds and self._max_bounds and False otherwise."""
         bounding_rect = self.get_largest_valid_bounding_rect(image)
         if bounding_rect is not None:
             return self._is_rectangle_in_bounds(bounding_rect)
         return False
 
     def _is_rectangle_in_bounds(self, rectangle):
+        """Compares 'rectangle' to self._min_bounds and self._max_bounds. Returns True if within bounds and False otherwise."""
         # rectangle = (x, y, w, h) where (x, y) = top left vertex
         return (
                 self._max_bounds[0][0] <= rectangle[0] <= self._min_bounds[0][0] and
