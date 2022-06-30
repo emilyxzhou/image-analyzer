@@ -1,0 +1,3 @@
+[submodule "src/ocr"]
+	path = src/ocr
+	url = https://github.com/emilyxzhou/ocr.git
